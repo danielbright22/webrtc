@@ -2,140 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WebRTC Chat App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WebRTC Random Chat</title>
   <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
     rel="stylesheet"
   />
   <style>
     video {
       width: 100%;
-      max-width: 400px;
       height: auto;
       border-radius: 10px;
-      border: 2px solid #6c757d;
-      margin-bottom: 1rem;
-    }
-    .video-container {
-      display: flex;
-      flex-direction: row;
-      justify-content: center;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    #usersList {
-      max-height: 200px;
-      overflow-y: auto;
+      background: #000;
     }
   </style>
 </head>
-<body class="bg-light">
-  <div class="container py-4">
-    <h2 class="text-center mb-4">🌐 WebRTC Random Video Chat</h2>
-
-    <div class="video-container mb-4">
-      <div>
-        <h5 class="text-center">You</h5>
+<body class="bg-dark text-white">
+  <div class="container py-5 text-center">
+    <h1 class="mb-4">Stranger Video Chat</h1>
+    <div class="row mb-4">
+      <div class="col-md-6">
+        <h5>You</h5>
         <video id="localVideo" autoplay muted></video>
       </div>
-      <div>
-        <h5 class="text-center">Stranger</h5>
+      <div class="col-md-6">
+        <h5>Stranger</h5>
         <video id="remoteVideo" autoplay></video>
       </div>
     </div>
-
-    <div class="d-flex justify-content-center mb-4">
-      <button id="nextBtn" class="btn btn-primary btn-lg">Next</button>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <strong>👥 Users Online</strong>
-      </div>
-      <ul class="list-group list-group-flush" id="usersList"></ul>
-    </div>
+    <button id="nextBtn" class="btn btn-warning btn-lg mb-4">Next</button>
+    <h6>Users Online: <span id="onlineCount">0</span></h6>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideo = document.getElementById("remoteVideo");
-    const nextBtn = document.getElementById("nextBtn");
-    const usersList = document.getElementById("usersList");
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const nextBtn = document.getElementById('nextBtn');
+    const onlineCount = document.getElementById('onlineCount');
 
     let localStream;
     let peer;
 
-    // Request media devices
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        localVideo.srcObject = stream;
-        localStream = stream;
-      })
-      .catch((err) => {
-        alert("Please allow camera & microphone access.");
-        console.error(err);
-      });
-
-    socket.on("connect", () => {
-      console.log("Connected to signaling server");
+    socket.on('update-users', (users) => {
+      onlineCount.textContent = users.length;
     });
 
-    socket.on("matched", (partnerId) => {
-      console.log("Matched with", partnerId);
-      createPeerConnection(true);
-    });
-
-    socket.on("offer", (offer) => {
-      createPeerConnection(false);
-      peer
-        .setRemoteDescription(new RTCSessionDescription(offer))
-        .then(() => peer.createAnswer())
-        .then((answer) => {
-          peer.setLocalDescription(answer);
-          socket.emit("answer", answer);
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+          localVideo.srcObject = stream;
+          localStream = stream;
+        })
+        .catch(err => {
+          alert('Please allow camera/microphone access');
+          console.error(err);
         });
-    });
+    } else {
+      alert('Your browser does not support getUserMedia');
+    }
 
-    socket.on("answer", (answer) => {
-      peer.setRemoteDescription(new RTCSessionDescription(answer));
-    });
-
-    socket.on("candidate", (candidate) => {
-      peer.addIceCandidate(new RTCIceCandidate(candidate));
-    });
-
-    socket.on("disconnected", () => {
-      if (peer) {
-        peer.close();
-        peer = null;
-      }
-      remoteVideo.srcObject = null;
-    });
-
-    nextBtn.addEventListener("click", () => {
-      if (peer) {
-        peer.close();
-        peer = null;
-      }
-      remoteVideo.srcObject = null;
-      socket.emit("next");
-    });
-
-    function createPeerConnection(isInitiator) {
+    socket.on('matched', ({ id, isInitiator }) => {
+      console.log('Matched with', id, 'Initiator:', isInitiator);
       peer = new RTCPeerConnection();
 
-      localStream.getTracks().forEach((track) =>
-        peer.addTrack(track, localStream)
-      );
+      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
 
       peer.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit("candidate", event.candidate);
+          socket.emit('candidate', event.candidate);
         }
       };
 
@@ -144,24 +80,46 @@
       };
 
       if (isInitiator) {
-        peer
-          .createOffer()
-          .then((offer) => {
-            peer.setLocalDescription(offer);
-            socket.emit("offer", offer);
+        peer.createOffer()
+          .then(offer => peer.setLocalDescription(offer))
+          .then(() => {
+            socket.emit('offer', peer.localDescription);
           });
       }
-    }
+    });
 
-    // Online users list
-    socket.on("userList", (users) => {
-      usersList.innerHTML = "";
-      users.forEach((id) => {
-        const li = document.createElement("li");
-        li.className = "list-group-item";
-        li.textContent = id === socket.id ? "You (👤)" : id;
-        usersList.appendChild(li);
-      });
+    socket.on('offer', (offer) => {
+      peer.setRemoteDescription(new RTCSessionDescription(offer))
+        .then(() => peer.createAnswer())
+        .then(answer => {
+          peer.setLocalDescription(answer);
+          socket.emit('answer', answer);
+        });
+    });
+
+    socket.on('answer', (answer) => {
+      peer.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on('candidate', (candidate) => {
+      peer.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    socket.on('disconnected', () => {
+      if (peer) {
+        peer.close();
+        peer = null;
+      }
+      remoteVideo.srcObject = null;
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (peer) {
+        peer.close();
+        peer = null;
+      }
+      remoteVideo.srcObject = null;
+      socket.emit('next');
     });
   </script>
 </body>
