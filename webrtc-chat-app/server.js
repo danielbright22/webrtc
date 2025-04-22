@@ -58,6 +58,6 @@ io.on('connection', (socket) => {
 });
 
 // Start the server on your local IP address
-server.listen(3000, '192.168.88.248', () => {
-  console.log('Server running on http://192.168.88.248:3000');
+server.listen(3000, '0.0.0.0', () => {
+  console.log('Server is running on port 3000');
 });
