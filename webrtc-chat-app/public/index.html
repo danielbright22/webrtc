@@ -16,12 +16,11 @@
   <h1>WebRTC Video Chat</h1>
   <video id="localVideo" autoplay muted></video>
   <video id="remoteVideo" autoplay></video>
-
   <button id="nextBtn">Next</button>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io('http://192.168.88.248:3000');  // Update to your local IP
+    const socket = io();  // ✅ Will auto-connect to your current domain/host
 
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
@@ -30,31 +29,24 @@
     let localStream;
     let peer;
 
-    // Check if navigator.mediaDevices is available
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      console.log('getUserMedia is available');  // Debugging
-      // Get user media (camera and microphone)
       navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(stream => {
-          console.log('User media stream received:', stream);  // Debugging
           localVideo.srcObject = stream;
           localStream = stream;
         })
         .catch(err => {
-          console.error('Error accessing media devices:', err);  // Debugging
+          console.error('Error accessing media devices:', err);
           alert('Unable to access camera and microphone. Please check permissions.');
         });
     } else {
-      console.error('getUserMedia is not supported in this browser');
-      alert('Your browser does not support getUserMedia. Please try with a different browser.');
+      alert('Your browser does not support getUserMedia. Please try a different one.');
     }
 
-    // Connect to the server and handle signaling
     socket.on('connect', () => {
       console.log('Connected to the server!');
     });
 
-    // Handle peer connections and video streams
     socket.on('offer', (offer) => {
       peer = new RTCPeerConnection();
 
@@ -78,12 +70,10 @@
         });
     });
 
-    // Handle ICE candidates
     socket.on('candidate', (candidate) => {
       peer.addIceCandidate(new RTCIceCandidate(candidate));
     });
 
-    // Handle the 'next' button click
     nextBtn.addEventListener('click', () => {
       if (peer) {
         peer.close();
