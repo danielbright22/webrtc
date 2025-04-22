@@ -20,68 +20,96 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();  // ✅ Will auto-connect to your current domain/host
+   const socket = io();
 
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const nextBtn = document.getElementById('nextBtn');
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+const nextBtn = document.getElementById('nextBtn');
 
-    let localStream;
-    let peer;
+let localStream;
+let peer;
 
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then(stream => {
-          localVideo.srcObject = stream;
-          localStream = stream;
-        })
-        .catch(err => {
-          console.error('Error accessing media devices:', err);
-          alert('Unable to access camera and microphone. Please check permissions.');
-        });
-    } else {
-      alert('Your browser does not support getUserMedia. Please try a different one.');
+// Setup media
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+  .then(stream => {
+    localVideo.srcObject = stream;
+    localStream = stream;
+  })
+  .catch(err => {
+    alert("Camera and microphone access denied.");
+    console.error(err);
+  });
+
+socket.on('connect', () => {
+  console.log("Connected to signaling server");
+});
+
+// Matched with another user
+socket.on('matched', (partnerId) => {
+  console.log("Matched with:", partnerId);
+  createPeerConnection(true);
+});
+
+socket.on('offer', (offer) => {
+  createPeerConnection(false);
+  peer.setRemoteDescription(new RTCSessionDescription(offer))
+    .then(() => peer.createAnswer())
+    .then(answer => {
+      peer.setLocalDescription(answer);
+      socket.emit('answer', answer);
+    });
+});
+
+socket.on('answer', (answer) => {
+  peer.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('candidate', (candidate) => {
+  peer.addIceCandidate(new RTCIceCandidate(candidate));
+});
+
+socket.on('disconnected', () => {
+  if (peer) {
+    peer.close();
+    peer = null;
+  }
+  remoteVideo.srcObject = null;
+});
+
+// Next button logic
+nextBtn.addEventListener('click', () => {
+  if (peer) {
+    peer.close();
+    peer = null;
+  }
+  remoteVideo.srcObject = null;
+  socket.emit('next');
+});
+
+function createPeerConnection(isInitiator) {
+  peer = new RTCPeerConnection();
+
+  localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+
+  peer.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('candidate', event.candidate);
     }
+  };
 
-    socket.on('connect', () => {
-      console.log('Connected to the server!');
-    });
+  peer.ontrack = (event) => {
+    remoteVideo.srcObject = event.streams[0];
+  };
 
-    socket.on('offer', (offer) => {
-      peer = new RTCPeerConnection();
+  if (isInitiator) {
+    peer.createOffer()
+      .then(offer => {
+        peer.setLocalDescription(offer);
+        socket.emit('offer', offer);
+      });
+  }
+}
 
-      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
-
-      peer.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('candidate', event.candidate);
-        }
-      };
-
-      peer.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-      };
-
-      peer.setRemoteDescription(new RTCSessionDescription(offer))
-        .then(() => peer.createAnswer())
-        .then((answer) => {
-          peer.setLocalDescription(answer);
-          socket.emit('answer', answer);
-        });
-    });
-
-    socket.on('candidate', (candidate) => {
-      peer.addIceCandidate(new RTCIceCandidate(candidate));
-    });
-
-    nextBtn.addEventListener('click', () => {
-      if (peer) {
-        peer.close();
-        peer = null;
-      }
-      remoteVideo.srcObject = null;
-      socket.emit('next');
-    });
   </script>
 </body>
 </html>
