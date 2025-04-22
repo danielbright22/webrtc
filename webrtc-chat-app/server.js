@@ -8,15 +8,22 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static('public'));  // serve your HTML from "public" folder
+app.use(express.static('public'));  // Serve HTML and frontend files from /public
 
 let waitingUser = null;
 
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+// Helper function to emit current online users
+function sendOnlineUsers() {
+  const users = Array.from(io.sockets.sockets.keys());
+  io.emit('userList', users);
+}
 
+io.on('connection', (socket) => {
+  console.log('✅ User connected:', socket.id);
+  sendOnlineUsers(); // Update user list for all clients
+
+  // Matchmaking logic
   if (waitingUser) {
-    // Pair users
     const partner = waitingUser;
     waitingUser = null;
 
@@ -29,24 +36,28 @@ io.on('connection', (socket) => {
     waitingUser = socket;
   }
 
+  // Handle offer from client
   socket.on('offer', (data) => {
     if (socket.partner) {
       socket.partner.emit('offer', data);
     }
   });
 
+  // Handle answer from client
   socket.on('answer', (data) => {
     if (socket.partner) {
       socket.partner.emit('answer', data);
     }
   });
 
+  // Handle ICE candidate
   socket.on('candidate', (data) => {
     if (socket.partner) {
       socket.partner.emit('candidate', data);
     }
   });
 
+  // Handle "Next" button logic
   socket.on('next', () => {
     if (socket.partner) {
       socket.partner.emit('disconnected');
@@ -66,20 +77,27 @@ io.on('connection', (socket) => {
       socket.emit('matched', partner.id);
       partner.emit('matched', socket.id);
     }
+
+    sendOnlineUsers(); // Update users list
   });
 
+  // When user disconnects
   socket.on('disconnect', () => {
+    console.log('❌ User disconnected:', socket.id);
+
     if (socket.partner) {
       socket.partner.emit('disconnected');
       socket.partner.partner = null;
     }
+
     if (waitingUser === socket) {
       waitingUser = null;
     }
-    console.log('User disconnected:', socket.id);
+
+    sendOnlineUsers(); // Update users list
   });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
+  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
 });
