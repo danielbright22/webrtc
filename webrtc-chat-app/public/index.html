@@ -34,93 +34,124 @@
     <h6>Users Online: <span id="onlineCount">0</span></h6>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const nextBtn = document.getElementById('nextBtn');
-    const onlineCount = document.getElementById('onlineCount');
+ <script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  const localVideo = document.getElementById('localVideo');
+  const remoteVideo = document.getElementById('remoteVideo');
+  const nextBtn = document.getElementById('nextBtn');
+  const onlineCount = document.getElementById('onlineCount');
 
-    let localStream;
-    let peer;
+  let localStream;
+  let peer;
 
-    socket.on('update-users', (users) => {
-      onlineCount.textContent = users.length;
+  // STUN config for cross-network connections
+  const rtcConfig = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' }
+    ]
+  };
+
+  // Update online user count
+  socket.on('update-users', (users) => {
+    onlineCount.textContent = users.length;
+  });
+
+  // Get user media (camera/mic)
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localVideo.srcObject = stream;
+        localStream = stream;
+        socket.emit('ready'); // Notify server we're ready
+      })
+      .catch(err => {
+        alert('Please allow access to your camera/microphone.');
+        console.error(err);
+      });
+  } else {
+    alert('Your browser does not support getUserMedia.');
+  }
+
+  // Matched with a peer
+  socket.on('matched', ({ id, isInitiator }) => {
+    console.log('Matched with:', id, 'Is initiator:', isInitiator);
+    createPeer();
+
+    localStream.getTracks().forEach(track => {
+      peer.addTrack(track, localStream);
     });
 
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then(stream => {
-          localVideo.srcObject = stream;
-          localStream = stream;
-        })
-        .catch(err => {
-          alert('Please allow camera/microphone access');
-          console.error(err);
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('candidate', event.candidate);
+      }
+    };
+
+    peer.ontrack = (event) => {
+      console.log("Receiving remote stream");
+      remoteVideo.srcObject = event.streams[0];
+    };
+
+    if (isInitiator) {
+      peer.createOffer()
+        .then(offer => peer.setLocalDescription(offer))
+        .then(() => {
+          socket.emit('offer', peer.localDescription);
         });
-    } else {
-      alert('Your browser does not support getUserMedia');
     }
+  });
 
-    socket.on('matched', ({ id, isInitiator }) => {
-      console.log('Matched with', id, 'Initiator:', isInitiator);
-      peer = new RTCPeerConnection();
+  // Offer received
+  socket.on('offer', (offer) => {
+    if (!peer) createPeer();
 
-      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+    peer.setRemoteDescription(new RTCSessionDescription(offer))
+      .then(() => peer.createAnswer())
+      .then(answer => {
+        peer.setLocalDescription(answer);
+        socket.emit('answer', answer);
+      });
+  });
 
-      peer.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('candidate', event.candidate);
-        }
-      };
+  // Answer received
+  socket.on('answer', (answer) => {
+    peer.setRemoteDescription(new RTCSessionDescription(answer));
+  });
 
-      peer.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-      };
+  // ICE candidate received
+  socket.on('candidate', (candidate) => {
+    peer.addIceCandidate(new RTCIceCandidate(candidate));
+  });
 
-      if (isInitiator) {
-        peer.createOffer()
-          .then(offer => peer.setLocalDescription(offer))
-          .then(() => {
-            socket.emit('offer', peer.localDescription);
-          });
-      }
-    });
+  // Handle peer disconnect
+  socket.on('disconnected', () => {
+    cleanupPeer();
+  });
 
-    socket.on('offer', (offer) => {
-      peer.setRemoteDescription(new RTCSessionDescription(offer))
-        .then(() => peer.createAnswer())
-        .then(answer => {
-          peer.setLocalDescription(answer);
-          socket.emit('answer', answer);
-        });
-    });
+  // Next button
+  nextBtn.addEventListener('click', () => {
+    cleanupPeer();
+    socket.emit('next');
+  });
 
-    socket.on('answer', (answer) => {
-      peer.setRemoteDescription(new RTCSessionDescription(answer));
-    });
+  // Create a new RTCPeerConnection
+  function createPeer() {
+    if (peer) {
+      peer.close();
+    }
+    peer = new RTCPeerConnection(rtcConfig);
+  }
 
-    socket.on('candidate', (candidate) => {
-      peer.addIceCandidate(new RTCIceCandidate(candidate));
-    });
+  // Clean up the peer connection
+  function cleanupPeer() {
+    if (peer) {
+      peer.close();
+      peer = null;
+    }
+    remoteVideo.srcObject = null;
+  }
+</script>
 
-    socket.on('disconnected', () => {
-      if (peer) {
-        peer.close();
-        peer = null;
-      }
-      remoteVideo.srcObject = null;
-    });
-
-    nextBtn.addEventListener('click', () => {
-      if (peer) {
-        peer.close();
-        peer = null;
-      }
-      remoteVideo.srcObject = null;
-      socket.emit('next');
-    });
-  </script>
 </body>
 </html>
