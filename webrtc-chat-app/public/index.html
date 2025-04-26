@@ -209,70 +209,27 @@
     // WebRTC Variables
     let localStream;
     let peer;
-    let mySocketId;
-    let currentPartner = null;
 
-    // WebRTC Configuration (with TURN for better connectivity)
-    const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' } // Free STUN (works for basic cases)
-  ]
-};
-    // Initialize the app
-    init();
-
-    async function init() {
-      showLoading(true);
-      setupEventListeners();
-      await getMediaDevices();
-      detectCountry();
-      showLoading(false);
-    }
-
-    function setupEventListeners() {
-      // Next stranger button
-      nextBtn.addEventListener('click', () => {
-        if (peer) {
-          cleanupPeer();
-          socket.emit('next');
-          showChat(false);
-          showLoading(true);
-        }
-      });
-
-      // Report button
-      reportBtn.addEventListener('click', () => {
-        if (!currentPartner) return;
-        new bootstrap.Modal(document.getElementById('reportModal')).show();
-      });
-
-      // Submit report
-      document.getElementById('submitReport').addEventListener('click', () => {
-        const reason = document.getElementById('reportReason').value;
-        const details = document.getElementById('reportDetails').value;
-        socket.emit('report', { 
-          reason: `${reason}: ${details}`,
-          partnerId: currentPartner 
+    // Check if navigator.mediaDevices is available
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      console.log('getUserMedia is available');  // Debugging
+      // Get user media (camera and microphone)
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+          console.log('User media stream received:', stream);  // Debugging
+          localVideo.srcObject = stream;
+          localStream = stream;
+        })
+        .catch(err => {
+          console.error('Error accessing media devices:', err);  // Debugging
+          alert('Unable to access camera and microphone. Please check permissions.');
         });
-        bootstrap.Modal.getInstance(document.getElementById('reportModal')).hide();
-        showAlert('User reported. Finding new stranger...', 'success');
-        socket.emit('next');
-      });
-
-      // Toggle chat
-      toggleChatBtn.addEventListener('click', () => {
-        const isVisible = chatContainer.style.display !== 'none';
-        showChat(!isVisible);
-      });
-
-      // Send message
-      sendMsg.addEventListener('click', sendMessage);
-      chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-      });
+    } else {
+      console.error('getUserMedia is not supported in this browser');
+      alert('Your browser does not support getUserMedia. Please try with a different browser.');
     }
 
-    // Socket.io Event Handlers
+    // Connect to the server and handle signaling
     socket.on('connect', () => {
       console.log('Connected to server');
       connectionStatus.textContent = 'Connected';

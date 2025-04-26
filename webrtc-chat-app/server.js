@@ -175,46 +175,12 @@ io.on('connection', (socket) => {
 
   // Cleanup on disconnect (enhanced)
   socket.on('disconnect', () => {
-    console.log('Disconnected:', socket.id);
-    onlineUsers.delete(socket.id);
-    updateOnlineCount();
-    
-    if (socket.partner) {
-      socket.partner.emit('disconnected');
-      cleanupPartner(socket.partner);
-    }
-    
-    if (waitingUser?.id === socket.id) {
-      waitingUser = null;
-    }
+    console.log('User disconnected:', socket.id);
+    users = users.filter(user => user !== socket.id);
   });
-
-  // Helper functions
-  function cleanupPartner(socket) {
-    if (socket.partner) {
-      socket.partner.partner = null;
-      socket.partner = null;
-    }
-  }
-  
-  function updateOnlineCount() {
-    io.emit('update-users', {
-      count: onlineUsers.size,
-      countries: [...new Set([...onlineUsers.values()].map(u => u.country))].filter(Boolean)
-    });
-  }
 });
 
-// Start server (Render compatible)
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+// Start the server on your local IP address
+server.listen(3000, '192.168.88.248', () => {
+  console.log('Server running on http://192.168.88.248:3000');
 });
-
-// Auto-unban expired entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, data] of bannedIPs) {
-    if (data.expiresAt <= now) bannedIPs.delete(ip);
-  }
-}, 60 * 60 * 1000); // Check hourly
